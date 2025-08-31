@@ -6,17 +6,28 @@ import os from 'os';
 export const cacheDir = path.join(os.homedir(), '.thunder', 'auth');
 const profileFile = path.join(cacheDir, 'profile.json');
 
+export type DeviceCodeCb = (info: { userCode: string; verificationUri: string }) => void;
+
 /**
- * Lance l'auth Microsoft (ouvre le navigateur la 1re fois),
- * récupère le token + le profil et enregistre un profil léger.
+ * Auth Microsoft via "Device Code Flow".
+ * - onDeviceCode: callback appelé pour afficher le code à l'utilisateur
  */
-export async function authenticate() {
+export async function authenticate(onDeviceCode?: DeviceCodeCb) {
   await fs.promises.mkdir(cacheDir, { recursive: true });
 
-  const flow = new Authflow('thunder-client', cacheDir);
+  // NB: "flow" et "deviceCodeCallback" sont passés en 'any' pour éviter
+  // d'être bloqué par les types; prismarine-auth les reconnaît à l'exécution.
+  const flow: any = new (Authflow as any)('thunder-client', cacheDir, {
+    flow: 'device',
+    deviceCodeCallback: (res: any) => {
+      // res.userCode      -> code à entrer
+      // res.verificationUri -> https://microsoft.com/devicelogin
+      onDeviceCode?.({ userCode: res.userCode, verificationUri: res.verificationUri });
+    },
+  });
+
   const result = await flow.getMinecraftJavaToken({ fetchProfile: true });
 
-  // Sauvegarde un profil léger pour savoir si l'utilisateur est connecté.
   const p = result.profile;
   if (p) {
     await fs.promises.writeFile(
@@ -25,10 +36,9 @@ export async function authenticate() {
       'utf8'
     );
   }
-  return result; // { token, profile, entitlements, certificates }
+  return result;
 }
 
-/** Retourne le profil sauvegardé (ou null si pas connecté). */
 export async function getSavedProfile(): Promise<{ id: string; name: string } | null> {
   try {
     const txt = await fs.promises.readFile(profileFile, 'utf8');
