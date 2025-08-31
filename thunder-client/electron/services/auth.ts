@@ -1,41 +1,54 @@
-import { Authflow } from 'prismarine-auth';
-import fs from 'fs';
+// Service d'authentification Microsoft / Xbox / Minecraft (flow "live" + device code)
+// Fonctionne sans enregistrer d'app Azure. Nécessite prismarine-auth >= 2.6.
+
+import { app, dialog, shell } from 'electron';
 import path from 'path';
-import os from 'os';
+import { Authflow, Titles } from 'prismarine-auth';
 
-export const cacheDir = path.join(os.homedir(), '.thunder', 'auth');
-const profileFile = path.join(cacheDir, 'profile.json');
+export type McSession = {
+  token: string;
+  entitlements?: any;
+  profile?: { id: string; name: string };
+};
 
-/**
- * Connexion Microsoft via le flux "live" (aucune app Azure requise).
- * Compatible avec prismarine-auth 2.5.x.
- */
-export async function authenticate() {
-  await fs.promises.mkdir(cacheDir, { recursive: true });
+export async function authenticate(): Promise<McSession> {
+  // Répertoire où prismarine-auth mettra le cache des tokens
+  const cacheDir = path.join(app.getPath('userData'), 'auth-cache');
 
-  // 👉 On force le flow "live" (pas "msal" ni "device")
-  const flow: any = new (Authflow as any)('thunder-client', cacheDir, {
-    flow: 'live',
+  // IMPORTANT : flow "live" + authTitle = Minecraft Java
+  const flow = new Authflow(
+    'thunder-user',            // identifiant de cache (peu importe, mais stable)
+    cacheDir,
+    {
+      flow: 'live',
+      authTitle: Titles.MinecraftJava,  // << clé qui résout ton erreur
+      // deviceType / deviceVersion sont facultatifs
+    },
+    // Callback device-code : on affiche le code et on ouvre le navigateur
+    (res) => {
+      // Ouvre la page officielle Microsoft où entrer le code
+      shell.openExternal(res.verification_uri);
+      dialog.showMessageBox({
+        type: 'info',
+        title: 'Connexion Microsoft',
+        message:
+          'Pour connecter ton compte Microsoft :\n\n1) Une page vient de s’ouvrir dans ton navigateur.\n2) Entre ce code : ' +
+          res.user_code +
+          '\n3) Termine la connexion, puis reviens dans Thunder Client.',
+        buttons: ['OK'],
+      });
+    }
+  );
+
+  // Récupère le token Minecraft Java + profil
+  const mc = await flow.getMinecraftJavaToken({
+    fetchEntitlements: true,
+    fetchProfile: true,
   });
 
-  const result = await flow.getMinecraftJavaToken({ fetchProfile: true });
-
-  const p = result.profile;
-  if (p) {
-    await fs.promises.writeFile(
-      profileFile,
-      JSON.stringify({ id: p.id, name: p.name }, null, 2),
-      'utf8'
-    );
-  }
-  return result;
-}
-
-export async function getSavedProfile(): Promise<{ id: string; name: string } | null> {
-  try {
-    const txt = await fs.promises.readFile(profileFile, 'utf8');
-    return JSON.parse(txt);
-  } catch {
-    return null;
-  }
+  return {
+    token: mc.token,
+    entitlements: mc.entitlements,
+    profile: mc.profile,
+  };
 }
