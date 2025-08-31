@@ -1,44 +1,17 @@
-"use client"
+import TopBar from '@/components/TopBar';
+import Sidebar from '@/components/Sidebar';
+import HomeHUD from '@/components/HomeHUD';
 
-import { useState } from "react"
-import { Sidebar } from "@/components/Sidebar"
-import { MainContent } from "@/components/MainContent"
-import { TopBar } from "@/components/TopBar"
-import { cn } from "@/lib/utils"
-
-export default function Home() {
-  const [activeSection, setActiveSection] = useState("home")
-  const [isCollapsed, setIsCollapsed] = useState(false)
-  const [isDarkMode, setIsDarkMode] = useState(true)
-
-  const toggleSidebar = () => {
-    setIsCollapsed(!isCollapsed)
-  }
-
-  const toggleDarkMode = () => {
-    setIsDarkMode(!isDarkMode)
-  }
-
+export default function Page() {
   return (
-    <div className={cn(
-      "min-h-screen text-white flex flex-col transition-colors duration-300",
-      isDarkMode
-        ? "bg-zinc-950"
-        : "bg-gray-50 text-gray-900"
-    )}>
-      <TopBar
-        onToggleDarkMode={toggleDarkMode}
-        isDarkMode={isDarkMode}
-      />
-      <div className="flex flex-1">
-        <Sidebar
-          activeItem={activeSection}
-          onActiveItemChange={setActiveSection}
-          isCollapsed={isCollapsed}
-          onToggleCollapse={toggleSidebar}
-        />
-        <MainContent activeSection={activeSection} />
+    <div className="min-h-screen bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-950 text-neutral-100">
+      <TopBar />
+      <div className="flex">
+        <Sidebar />
+        <main className="flex-1 p-4 md:p-6">
+          <HomeHUD />
+        </main>
       </div>
     </div>
-  )
+  );
 }
