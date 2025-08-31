@@ -1,7 +1,6 @@
 import { app, dialog, shell } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import fetch from 'node-fetch';
 import { Authflow, Titles } from 'prismarine-auth';
 
 export type McSession = {
@@ -15,6 +14,9 @@ const baseDir = path.join(app.getPath('appData'), 'Thunder Client');
 const cacheDir = path.join(baseDir, 'auth-cache');
 const profileFile = path.join(baseDir, 'profile.json');
 const debugFile = path.join(baseDir, 'auth-debug.log');
+
+// Utilise le fetch natif (Node 18+/Electron)
+const gfetch: typeof globalThis.fetch = (globalThis as any).fetch;
 
 // Forcer le login interactif à chaque clic (évite tout cache parasite)
 const ALWAYS_INTERACTIVE = true;
@@ -77,7 +79,7 @@ export async function authenticate(): Promise<McSession> {
       (res) => deviceCodeDialog(res.user_code, res.verification_uri)
     );
 
-    // 1) On récupère d’abord UNIQUEMENT le token Minecraft (sans entitlements/profil)
+    // 1) Token Minecraft (sans entitlements / profile)
     await log('Step A: getMinecraftJavaToken (token only) START');
     const mcBasic = await flow.getMinecraftJavaToken({
       fetchEntitlements: false,
@@ -89,8 +91,8 @@ export async function authenticate(): Promise<McSession> {
 
     // 2) Diagnostic Entitlements (licence)
     await log('Step B: fetch entitlements START');
-    const entRes = await fetch('https://api.minecraftservices.com/entitlements/mcstore', {
-      headers: { Authorization: bearer },
+    const entRes = await gfetch('https://api.minecraftservices.com/entitlements/mcstore', {
+      headers: { Authorization: bearer }
     });
     const entTxt = await entRes.text();
     await log(`Step B: entitlements status=${entRes.status} body=${entTxt.slice(0, 500)}`);
@@ -110,8 +112,8 @@ export async function authenticate(): Promise<McSession> {
 
     // 3) Diagnostic Profile (pseudo/UUID)
     await log('Step C: fetch profile START');
-    const profRes = await fetch('https://api.minecraftservices.com/minecraft/profile', {
-      headers: { Authorization: bearer },
+    const profRes = await gfetch('https://api.minecraftservices.com/minecraft/profile', {
+      headers: { Authorization: bearer }
     });
     const profTxt = await profRes.text();
     await log(`Step C: profile status=${profRes.status} body=${profTxt.slice(0, 500)}`);
@@ -144,7 +146,6 @@ export async function authenticate(): Promise<McSession> {
     };
   } catch (err: any) {
     await log('AUTH ERROR', { message: err?.message });
-    // Si erreur générique : on affiche le message brut
     if (!(err instanceof Error) || !/403/.test(err.message)) {
       dialog.showErrorBox('Connexion Microsoft', err?.message || String(err));
     }
