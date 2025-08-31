@@ -9,11 +9,11 @@
     "lint": "bunx tsc --noEmit && next lint",
     "format": "bunx biome format --write",
     "electron:dev": "concurrently \"next dev -H 0.0.0.0 --turbopack\" \"wait-on tcp:3000 && electron .\"",
-    "electron:build": "next build && electron-builder",
+    "electron:build": "next build && electron-builder --publish=never",
     "postinstall": "electron-builder install-app-deps || true",
     "build:electron": "tsc -p tsconfig.electron.json",
     "electron:start": "node electron-dist/main.js",
-    "build:win": "npm run build && npm run build:electron && electron-builder --win --x64"
+    "build:win": "npm run build && npm run build:electron && electron-builder --win --x64 --publish=never"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -27,7 +27,6 @@
     "tailwindcss-animate": "^1.0.7",
     "electron": "^31.3.1",
     "electron-builder": "^24.13.3",
-    "electron-is-dev": "^3.2.0",
     "concurrently": "^9.1.0",
     "wait-on": "^8.0.0",
     "minecraft-launcher-core": "^3.18.0",
