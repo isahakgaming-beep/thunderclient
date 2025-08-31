@@ -9,41 +9,50 @@ export type McSession = {
   profile?: { id: string; name: string };
 };
 
-// Répertoire de cache (tokens, profile)
-export const cacheDir = path.join(app.getPath('userData'), 'auth-cache');
-const profileFile = path.join(cacheDir, 'profile.json');
+// On force un dossier stable (même en dev)
+const baseDir = path.join(app.getPath('appData'), 'Thunder Client');
+export const cacheDir = path.join(baseDir, 'auth-cache');
+const profileFile = path.join(baseDir, 'profile.json');
 
-/**
- * Connexion Microsoft (flow "live") avec authTitle = Minecraft Java.
- * -> Pas besoin de créer une app Azure.
- * -> Device-code : on ouvre la page et on affiche le code à saisir.
- */
-export async function authenticate(): Promise<McSession> {
-  await fs.promises.mkdir(cacheDir, { recursive: true });
+// TEMP : on force l’auth interactive à chaque fois pour débloquer le 403
+const ALWAYS_INTERACTIVE = true;
+
+function deviceCodeDialog(code: string, url?: string) {
+  if (url) shell.openExternal(url);
+  dialog.showMessageBox({
+    type: 'info',
+    title: 'Connexion Microsoft',
+    message:
+      '1) Une page Microsoft vient de s’ouvrir dans ton navigateur.\n' +
+      `2) Entre ce code : ${code}\n` +
+      '3) Termine la connexion, puis reviens dans Thunder Client.',
+    buttons: ['OK'],
+  }).catch(() => {});
+}
+
+function is403(err: any) {
+  const status = err?.response?.statusCode || err?.statusCode || err?.code;
+  const msg = err?.message || '';
+  return status === 403 || /403/.test(String(status)) || /forbidden/i.test(msg);
+}
+
+async function purgeAuthCache() {
+  await fs.promises.rm(cacheDir, { recursive: true, force: true }).catch(() => {});
+  await fs.promises.mkdir(cacheDir, { recursive: true }).catch(() => {});
+}
+
+async function runFlow(): Promise<McSession> {
+  await fs.promises.mkdir(baseDir, { recursive: true }).catch(() => {});
+  await fs.promises.mkdir(cacheDir, { recursive: true }).catch(() => {});
 
   const flow = new Authflow(
     'thunder-user',
     cacheDir,
     {
       flow: 'live',
-      authTitle: Titles.MinecraftJava,
+      authTitle: Titles.MinecraftJava, // obligatoire avec le flow "live"
     },
-    (res) => {
-      // Ouvre le navigateur et affiche le code à l’utilisateur
-      if (res.verification_uri) shell.openExternal(res.verification_uri);
-      dialog
-        .showMessageBox({
-          type: 'info',
-          title: 'Connexion Microsoft',
-          message:
-            'Pour connecter ton compte Microsoft :\n\n' +
-            '1) Une page vient de s’ouvrir dans ton navigateur.\n' +
-            `2) Entre ce code : ${res.user_code}\n` +
-            '3) Termine la connexion, puis reviens dans Thunder Client.',
-          buttons: ['OK'],
-        })
-        .catch(() => {});
-    }
+    (res) => deviceCodeDialog(res.user_code, res.verification_uri)
   );
 
   const mc = await flow.getMinecraftJavaToken({
@@ -56,7 +65,7 @@ export async function authenticate(): Promise<McSession> {
       profileFile,
       JSON.stringify({ id: mc.profile.id, name: mc.profile.name }, null, 2),
       'utf8'
-    );
+    ).catch(() => {});
   }
 
   return {
@@ -66,7 +75,35 @@ export async function authenticate(): Promise<McSession> {
   };
 }
 
-/** Lecture du profil sauvegardé (utilisé par main.ts avant le launch). */
+export async function authenticate(): Promise<McSession> {
+  try {
+    if (ALWAYS_INTERACTIVE) {
+      // on purge toujours pour forcer l’ouverture de la page Microsoft
+      await purgeAuthCache();
+    }
+    return await runFlow();
+  } catch (err: any) {
+    if (is403(err)) {
+      await purgeAuthCache();
+      await dialog.showMessageBox({
+        type: 'info',
+        title: 'Session refusée (403)',
+        message:
+          "Les serveurs Xbox/Minecraft ont refusé l'accès.\n\n" +
+          "Causes courantes :\n" +
+          "• Pas de gamertag Xbox → https://www.xbox.com/\n" +
+          "• Compte enfant : autorisations Xbox (multijoueur/cross-network) → https://account.xbox.com/Settings\n" +
+          "• Pas de licence Minecraft Java sur ce compte → https://www.minecraft.net/msaprofile\n\n" +
+          "On va relancer la connexion…",
+        buttons: ['OK'],
+      }).catch(() => {});
+      return await runFlow();
+    }
+    dialog.showErrorBox('Connexion Microsoft', err?.message || String(err));
+    throw err;
+  }
+}
+
 export async function getSavedProfile(): Promise<{ id: string; name: string } | null> {
   try {
     const txt = await fs.promises.readFile(profileFile, 'utf8');
@@ -74,4 +111,9 @@ export async function getSavedProfile(): Promise<{ id: string; name: string } | 
   } catch {
     return null;
   }
+}
+
+export async function logout() {
+  await purgeAuthCache();
+  await fs.promises.rm(profileFile, { force: true }).catch(() => {});
 }
