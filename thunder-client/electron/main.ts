@@ -58,15 +58,20 @@ ipcMain.handle('auth:login', async () => {
   }
 });
 
+// nouveau : choix du dossier de jeu
+ipcMain.handle('choose:dir', async () => {
+  const res = await dialog.showOpenDialog({
+    properties: ['openDirectory', 'createDirectory']
+  });
+  return res.canceled ? null : res.filePaths[0];
+});
+
 ipcMain.handle('mc:launch', async (_e, args) => {
   try {
-    // 1) exige une session déjà enregistrée
     const saved = await getSavedProfile();
     if (!saved) {
       return { ok: false, code: 'SIGN_IN_REQUIRED', error: 'Please sign in first.' };
     }
-
-    // 2) lance Minecraft
     const { version, gameDir } = args || {};
     const javaPath = await ensureJava();
     const proc = await launchMinecraft({ version, gameDir, javaPath });
