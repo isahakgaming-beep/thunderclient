@@ -1,7 +1,9 @@
 appId: com.thunder.client
 productName: Thunder Client
+
 directories:
   output: dist
+
 files:
   - out/**
   - electron-dist/**
@@ -9,7 +11,14 @@ files:
 
 win:
   target: nsis
+
 mac:
   target: dmg
+
 linux:
   target: AppImage
+
+publish:
+  provider: github
+  owner: isahakgaming-beep
+  repo: thunderclient
