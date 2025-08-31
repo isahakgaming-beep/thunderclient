@@ -3,7 +3,7 @@ import path from 'path';
 import { authenticate } from './services/auth';
 import { launchMinecraft, ensureJava } from './services/launcher';
 
-const isDev = !app.isPackaged; // remplace electron-is-dev
+const isDev = !app.isPackaged;
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -20,12 +20,14 @@ function createWindow() {
     title: 'Thunder Client',
   });
 
-  const url = isDev
-    ? 'http://localhost:3000'
-    : `file://${path.join(__dirname, '../out/index.html')}`;
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:3000');
+    // mainWindow.webContents.openDevTools({ mode: 'detach' });
+  } else {
+    // charge le site statique exporté par Next (dossier /out)
+    mainWindow.loadFile(path.join(__dirname, '../out/index.html'));
+  }
 
-  mainWindow.loadURL(url);
-  // if (isDev) mainWindow.webContents.openDevTools({ mode: 'detach' });
   mainWindow.on('closed', () => (mainWindow = null));
 }
 
@@ -40,7 +42,7 @@ app.on('activate', () => {
 });
 
 // IPC handlers
-ipcMain.handle('auth:login', async (_e) => {
+ipcMain.handle('auth:login', async () => {
   try {
     const session = await authenticate();
     return { ok: true, session };
@@ -56,7 +58,7 @@ ipcMain.handle('mc:launch', async (_e, args) => {
     const proc = await launchMinecraft({ version, gameDir, javaPath });
     return { ok: true, pid: (proc as any)?.pid };
   } catch (err: any) {
-    dialog.showErrorBox('Launch failed', err?.message || String(err) );
+    dialog.showErrorBox('Launch failed', err?.message || String(err));
     return { ok: false, error: err?.message || String(err) };
   }
 });
