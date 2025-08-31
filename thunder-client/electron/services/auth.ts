@@ -139,4 +139,91 @@ async function tryLiveFlow(): Promise<McSession> {
   );
 
   await log('Step A (LIVE): getMinecraftJavaToken START');
-  const mcBas
+  const mcBasic = await flow.getMinecraftJavaToken({
+    fetchEntitlements: false,
+    fetchProfile: false,
+  });
+  await log('Step A (LIVE): token OK');
+
+  return finalizeFromToken(mcBasic.token);
+}
+
+async function trySisuFlow(): Promise<McSession> {
+  await log('SISU FLOW: start');
+  // on repart propre
+  await purgeAuthCache();
+
+  // Pas d’authTitle nécessaire en SISU
+  const flow = new Authflow('thunder-user', cacheDir, { flow: 'sisu' });
+
+  await log('Step A (SISU): getMinecraftJavaToken START');
+  const mcBasic = await flow.getMinecraftJavaToken({
+    fetchEntitlements: false,
+    fetchProfile: false,
+  });
+  await log('Step A (SISU): token OK');
+
+  return finalizeFromToken(mcBasic.token);
+}
+
+export async function authenticate(): Promise<McSession> {
+  await log('===== NEW AUTH ATTEMPT (with SISU fallback) =====');
+
+  // 1) LIVE (device code)
+  try {
+    const session = await tryLiveFlow();
+    await log('AUTH SUCCESS via LIVE');
+    return session;
+  } catch (errLive: any) {
+    await log('AUTH LIVE FAILED', { message: errLive?.message });
+
+    // 2) SISU (navigateur)
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Connexion Microsoft',
+      message:
+        'La première méthode de connexion a échoué. On va essayer une autre méthode.\n' +
+        'Une fenêtre de connexion système peut s’ouvrir (SISU).',
+    }).catch(() => {});
+
+    try {
+      const session = await trySisuFlow();
+      await log('AUTH SUCCESS via SISU');
+      return session;
+    } catch (errSisu: any) {
+      await log('AUTH SISU FAILED', { message: errSisu?.message });
+
+      const msg = (errSisu?.message || '').toString();
+      if (/403/.test(msg)) {
+        dialog.showErrorBox(
+          'Accès refusé (403) – Microsoft/Xbox',
+          'Les serveurs Xbox/Minecraft ont refusé l’accès.\n\n' +
+          'Vérifie :\n' +
+          '• Gamertag Xbox créé : https://www.xbox.com/\n' +
+          '• Autorisations multijoueur/cross-network : https://account.xbox.com/Settings\n' +
+          '• Ouvre le lanceur officiel Minecraft une fois (profil provisionné)\n' +
+          '• Heure Windows synchronisée\n\n' +
+          `Log détaillé : ${debugFile}`
+        );
+      } else {
+        dialog.showErrorBox('Connexion Microsoft', msg);
+      }
+      throw errSisu;
+    }
+  }
+}
+
+export async function getSavedProfile(): Promise<{ id: string; name: string } | null> {
+  try {
+    const txt = await fs.promises.readFile(profileFile, 'utf8');
+    return JSON.parse(txt);
+  } catch {
+    return null;
+  }
+}
+
+export async function logout() {
+  await purgeAuthCache();
+  await fs.promises.rm(profileFile, { force: true }).catch(() => {});
+  await log('LOGOUT: cache & profile cleared');
+}
