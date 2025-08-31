@@ -5,11 +5,13 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write  # pour créer/mettre à jour les releases
+
 jobs:
   build:
     runs-on: windows-latest
 
-    # Toutes les commandes `run:` s'exécutent dans le sous-dossier du projet
     defaults:
       run:
         working-directory: ./thunder-client
@@ -32,12 +34,14 @@ jobs:
       - name: Build electron (TS -> JS)
         run: npm run build:electron
 
-      - name: Package Windows exe
-        run: npx electron-builder --win --x64 --publish=never
+      - name: Package & Publish (GitHub Releases)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # token automatique de GitHub Actions
+        run: npx electron-builder --win --x64 --publish=always
 
-      - name: Upload artifact
+      # optionnel: garder aussi un artifact pour téléchargement direct
+      - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: Thunder-Client-Installer
-          # Chemin depuis la racine du dépôt
           path: thunder-client/dist/*.exe
