@@ -3,16 +3,14 @@ import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import path from 'path';
 import fs from 'fs';
 
-import { authenticate, status as authStatus, resetAuth } from './services/auth';
 import { launchMinecraft, ensureJava } from './services/launcher';
+// ⚠️ NE PAS importer auth ici : on le fera dynamiquement dans l’IPC
+// import { authenticate, status as authStatus, resetAuth } from './services/auth';
 
 const isDev = !app.isPackaged;
 
 let mainWindow: BrowserWindow | null = null;
 
-/* -------------------------------------------------------------------------- */
-/*  Fenêtre unique / ID app (Windows notifications / assets)                  */
-/* -------------------------------------------------------------------------- */
 app.setAppUserModelId('com.thunder.client');
 
 const gotLock = app.requestSingleInstanceLock();
@@ -28,14 +26,11 @@ if (!gotLock) {
   });
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Création fenêtre                                                          */
-/* -------------------------------------------------------------------------- */
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    show: false, // on attend ready-to-show pour éviter le flash blanc
+    show: false,
     backgroundColor: '#0b0b0f',
     title: 'Thunder Client',
     webPreferences: {
@@ -47,14 +42,11 @@ function createWindow() {
     },
   });
 
-  // ouverture externe des liens (sécurité)
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     try {
-      new URL(url); // valide l’URL
+      new URL(url);
       shell.openExternal(url);
-    } catch {
-      // ignore urls invalides
-    }
+    } catch {}
     return { action: 'deny' };
   });
 
@@ -63,30 +55,29 @@ function createWindow() {
     : `file://${path.join(__dirname, '../out/index.html')}`;
 
   mainWindow.loadURL(url);
-
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
-  });
-
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+  mainWindow.once('ready-to-show', () => mainWindow?.show());
+  mainWindow.on('closed', () => (mainWindow = null));
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Bootstrap : prépare le cache d’auth dans userData (jamais dans app.asar)  */
-/* -------------------------------------------------------------------------- */
+/* --------------------------- bootstrap & cache ---------------------------- */
 app.whenReady().then(() => {
-  const userData = app.getPath('userData'); // ex: C:\Users\<toi>\AppData\Roaming\Thunder Client
-  const authDir = path.join(userData, 'auth-cache');
-  try {
-    fs.mkdirSync(authDir, { recursive: true });
-  } catch (e) {
+  const userData = app.getPath('userData');                 // ex: ...\Roaming\Thunder Client
+  const authDir  = path.join(userData, 'auth-cache');
+
+  try { fs.mkdirSync(authDir, { recursive: true }); } catch (e) {
     console.error('Cannot create auth cache dir:', e);
   }
 
-  // transmis à electron/services/auth.ts pour forcer l’emplacement du cache
+  // 1) Transmettre au service d’auth (utilisé par prismarine-auth)
   process.env.THUNDER_AUTH_DIR = authDir;
+
+  // 2) Forcer le répertoire de travail LÀ où on peut écrire.
+  //    Certaines libs MSAL/MDX prennent "process.cwd()" pour y créer *_mca-cache.json.
+  try {
+    process.chdir(authDir);
+  } catch (e) {
+    console.warn('process.chdir(authDir) failed:', e);
+  }
 
   createWindow();
 });
@@ -99,41 +90,39 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
-/* -------------------------------------------------------------------------- */
-/*  IPCs                                                                       */
-/* -------------------------------------------------------------------------- */
+/* --------------------------------- IPCs ---------------------------------- */
 
-/** Connexion Microsoft/Minecraft */
+// Auth: on importe dynamiquement pour être sûr que le CWD/env sont déjà en place.
 ipcMain.handle('auth:login', async (_e, args) => {
-  // flow: 'auto' | 'sisu' | 'live'
   const flow = args?.flow ?? 'auto';
   try {
+    // import paresseux
+    const { authenticate } = require('./services/auth');
     const session = await authenticate({ flow });
-    return session; // { ok: boolean, profile?, error? }
+    return session; // { ok, profile? , error? }
   } catch (err: any) {
     return { ok: false, error: err?.message || String(err) };
   }
 });
 
-/** Statut de session (profil mis en cache côté disque) */
 ipcMain.handle('auth:status', async () => {
   try {
-    return await authStatus(); // { ok: true, profile } ou { ok: false, error }
+    const { status } = require('./services/auth');
+    return await status();
   } catch (err: any) {
     return { ok: false, error: err?.message || String(err) };
   }
 });
 
-/** Réinitialise complètement le cache d’auth (utile si ça boucle) */
 ipcMain.handle('auth:reset', async () => {
   try {
-    return await resetAuth(); // { ok: true } | { ok:false, error }
+    const { resetAuth } = require('./services/auth');
+    return await resetAuth();
   } catch (err: any) {
     return { ok: false, error: err?.message || String(err) };
   }
 });
 
-/** Sélecteur de dossier (ex.: choisir/mettre à jour le .minecraft) */
 ipcMain.handle('choose:dir', async () => {
   try {
     const res = await dialog.showOpenDialog(mainWindow!, {
@@ -146,7 +135,6 @@ ipcMain.handle('choose:dir', async () => {
   }
 });
 
-/** Lancement du jeu */
 ipcMain.handle('mc:launch', async (_e, args) => {
   try {
     const { version, gameDir } = args || {};
@@ -159,7 +147,6 @@ ipcMain.handle('mc:launch', async (_e, args) => {
   }
 });
 
-/** Ouvrir un chemin (logs, cache, etc.) dans l’explorateur */
 ipcMain.handle('logs:open', async (_e, p: string) => {
   try {
     await shell.openPath(p);
@@ -169,10 +156,9 @@ ipcMain.handle('logs:open', async (_e, p: string) => {
   }
 });
 
-/** Ouvrir une URL explicitement demandée depuis le renderer */
 ipcMain.handle('open:external', async (_e, url: string) => {
   try {
-    new URL(url); // simple validation
+    new URL(url);
     await shell.openExternal(url);
     return { ok: true };
   } catch (e: any) {
