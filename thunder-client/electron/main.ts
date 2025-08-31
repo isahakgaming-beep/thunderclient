@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'path';
 import { authenticate, getSavedProfile } from './services/auth';
@@ -27,7 +27,6 @@ function createWindow() {
   mainWindow.on('closed', () => (mainWindow = null));
 }
 
-// ---- Auto Update ----
 function setupAutoUpdater() {
   autoUpdater.logger = console as any;
   autoUpdater.on('update-downloaded', () => autoUpdater.quitAndInstall());
@@ -41,7 +40,7 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 
-// Promise avec timeout pour ne jamais spinner à l'infini
+// util: promesse avec timeout
 function withTimeout<T>(p: Promise<T>, ms = 180_000): Promise<T> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('LOGIN_TIMEOUT')), ms);
@@ -49,9 +48,7 @@ function withTimeout<T>(p: Promise<T>, ms = 180_000): Promise<T> {
   });
 }
 
-// ---- IPC ----
-ipcMain.handle('ping', async () => 'pong');
-
+// IPC
 ipcMain.handle('auth:status', async () => {
   const p = await getSavedProfile();
   return { ok: true, profile: p };
@@ -59,23 +56,12 @@ ipcMain.handle('auth:status', async () => {
 
 ipcMain.handle('auth:login', async () => {
   try {
-    // Lancement Device Code: on affiche un message avec le code et on ouvre l’URL
-    const session = await withTimeout(
-      authenticate(({ userCode, verificationUri }) => {
-        shell.openExternal(verificationUri || 'https://microsoft.com/devicelogin');
-        dialog.showMessageBox({
-          type: 'info',
-          title: 'Microsoft Sign-in',
-          message: 'Complete sign-in in your browser',
-          detail: `Open ${verificationUri || 'https://microsoft.com/devicelogin'} and enter this code:\n\n${userCode}\n\nAfter validating, return to Thunder Client.`,
-        }).catch(() => {});
-      }),
-      180_000 // 3 minutes
-    );
+    // IMPORTANT : on laisse prismarine-auth ouvrir l’URL MSAL lui-même.
+    const session = await withTimeout(authenticate(), 180_000);
     return { ok: true, profile: session.profile };
   } catch (err: any) {
     if ((err?.message || String(err)) === 'LOGIN_TIMEOUT') {
-      return { ok: false, error: 'Login timed out. Try again and enter the code in your browser.' };
+      return { ok: false, error: 'Login timed out. Close the browser and try again.' };
     }
     return { ok: false, error: err?.message || String(err) };
   }
