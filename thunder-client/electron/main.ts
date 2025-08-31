@@ -41,11 +41,11 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 
-// Utilitaire : promesse avec timeout
+// Promise avec timeout pour éviter le spinner infini au login
 function withTimeout<T>(p: Promise<T>, ms = 120_000): Promise<T> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('LOGIN_TIMEOUT')), ms);
-    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+    p.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
   });
 }
 
@@ -59,38 +59,30 @@ ipcMain.handle('auth:status', async () => {
 
 ipcMain.handle('auth:login', async () => {
   try {
-    // “Réveil” du navigateur : si pour une raison X l’ouverture auto traîne,
-    // on ouvre au moins la home Microsoft. L’auth réelle est gérée par prismarine-auth.
+    // “réveille” le navigateur si besoin ; l’auth réelle est gérée par prismarine-auth
     shell.openExternal('https://login.live.com/');
-
-    // Lancement du flux MS + profil, avec timeout (2 min)
     const session = await withTimeout(authenticate(), 120_000);
     return { ok: true, profile: session.profile };
   } catch (err: any) {
-    if (String(err?.message || err) === 'LOGIN_TIMEOUT') {
-      return {
-        ok: false,
-        error: 'Login timed out. Complete the Microsoft sign-in in your browser, then try again.',
-      };
+    if ((err?.message || String(err)) === 'LOGIN_TIMEOUT') {
+      return { ok: false, error: 'Login timed out. Complete Microsoft sign-in in your browser, then try again.' };
     }
     return { ok: false, error: err?.message || String(err) };
   }
 });
 
-// Choisir le dossier de jeu
 ipcMain.handle('choose:dir', async () => {
-  const res = await dialog.showOpenDialog({
+  const r = await dialog.showOpenDialog({
     properties: ['openDirectory', 'createDirectory'],
   });
-  return res.canceled ? null : res.filePaths[0];
+  return r.canceled ? null : r.filePaths[0];
 });
 
 ipcMain.handle('mc:launch', async (_e, args) => {
   try {
     const saved = await getSavedProfile();
-    if (!saved) {
-      return { ok: false, code: 'SIGN_IN_REQUIRED', error: 'Please sign in first.' };
-    }
+    if (!saved) return { ok: false, code: 'SIGN_IN_REQUIRED', error: 'Please sign in first.' };
+
     const { version, gameDir } = args || {};
     const javaPath = await ensureJava();
     const proc = await launchMinecraft({ version, gameDir, javaPath });
