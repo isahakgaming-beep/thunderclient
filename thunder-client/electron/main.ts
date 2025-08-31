@@ -27,6 +27,7 @@ function createWindow() {
   mainWindow.on('closed', () => (mainWindow = null));
 }
 
+// ---- MàJ auto ----
 function setupAutoUpdater() {
   autoUpdater.logger = console as any;
   autoUpdater.on('update-downloaded', () => autoUpdater.quitAndInstall());
@@ -40,7 +41,7 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 
-// util: promesse avec timeout
+// Promesse avec timeout (évite spinner infini)
 function withTimeout<T>(p: Promise<T>, ms = 180_000): Promise<T> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('LOGIN_TIMEOUT')), ms);
@@ -48,7 +49,7 @@ function withTimeout<T>(p: Promise<T>, ms = 180_000): Promise<T> {
   });
 }
 
-// IPC
+// ---- IPC ----
 ipcMain.handle('auth:status', async () => {
   const p = await getSavedProfile();
   return { ok: true, profile: p };
@@ -56,12 +57,12 @@ ipcMain.handle('auth:status', async () => {
 
 ipcMain.handle('auth:login', async () => {
   try {
-    // IMPORTANT : on laisse prismarine-auth ouvrir l’URL MSAL lui-même.
+    // IMPORTANT : on laisse prismarine-auth gérer l’ouverture du navigateur (flow "live").
     const session = await withTimeout(authenticate(), 180_000);
     return { ok: true, profile: session.profile };
   } catch (err: any) {
     if ((err?.message || String(err)) === 'LOGIN_TIMEOUT') {
-      return { ok: false, error: 'Login timed out. Close the browser and try again.' };
+      return { ok: false, error: 'Connexion trop longue. Ferme le navigateur et réessaie.' };
     }
     return { ok: false, error: err?.message || String(err) };
   }
@@ -77,7 +78,7 @@ ipcMain.handle('choose:dir', async () => {
 ipcMain.handle('mc:launch', async (_e, args) => {
   try {
     const saved = await getSavedProfile();
-    if (!saved) return { ok: false, code: 'SIGN_IN_REQUIRED', error: 'Please sign in first.' };
+    if (!saved) return { ok: false, code: 'SIGN_IN_REQUIRED', error: 'Connecte-toi d’abord à Microsoft.' };
 
     const { version, gameDir } = args || {};
     const javaPath = await ensureJava();
