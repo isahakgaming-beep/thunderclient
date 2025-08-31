@@ -1,77 +1,97 @@
 // electron/services/auth.ts
-import path from 'path';
-import fs from 'fs/promises';
-import { existsSync, mkdirSync, rmSync } from 'fs';
 import { app } from 'electron';
-import { Authflow } from 'prismarine-auth';
+import fs from 'fs/promises';
+import path from 'path';
+import { Authflow, Titles } from 'prismarine-auth';
 
-type Flow = 'auto' | 'sisu' | 'live';
+type FlowMode = 'auto' | 'sisu' | 'live';
 
-const ROOT = app.getPath('userData');
-const AUTH_DIR = path.join(ROOT, 'auth-cache');
+export type SimpleProfile = {
+  id: string;          // UUID sans tirets
+  name: string;        // pseudo
+  uuid?: string;       // UUID avec ou sans tirets
+  username?: string;   // alias de name
+  mclId?: string;      // alias interne si besoin
+};
+
+const AUTH_DIR = path.join(app.getPath('userData'), 'auth-cache');
 const SESSION_FILE = path.join(AUTH_DIR, 'session.json');
 
-function ensureDir(dir: string) {
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+async function ensureDir() {
+  await fs.mkdir(AUTH_DIR, { recursive: true });
 }
 
-async function writeJSON(file: string, data: any) {
-  ensureDir(path.dirname(file));
-  await fs.writeFile(file, JSON.stringify(data, null, 2), 'utf8');
+/** Uniformise le profil renvoyé par prismarine-auth / Mojang */
+function normalizeProfile(raw: any): SimpleProfile | null {
+  if (!raw) return null;
+  // certains tokens renvoient raw.id ou raw.uuid ou raw.profileId
+  const rawId = String(raw.id ?? raw.uuid ?? raw.profileId ?? '').trim();
+  const id = rawId.replace(/-/g, '');
+  const name = String(raw.name ?? raw.username ?? raw.profileName ?? 'Player');
+  return {
+    id,
+    name,
+    uuid: rawId || id,
+    username: name,
+    mclId: String(raw.mclId ?? rawId ?? id),
+  };
 }
 
-async function readJSON<T = any>(file: string): Promise<T | null> {
+/**
+ * Lance l’auth Microsoft/Minecraft et retourne un profil minimal.
+ * flow: 'auto' (défaut), 'sisu' (fallback Windows), 'live' (exige authTitle)
+ */
+export async function authenticate(opts?: { flow?: FlowMode }) {
   try {
-    const txt = await fs.readFile(file, 'utf8');
-    return JSON.parse(txt) as T;
-  } catch {
-    return null;
+    await ensureDir();
+    const flow = opts?.flow ?? 'auto';
+
+    // Pour 'live' certains environnements exigent un authTitle
+    const authTitle =
+      flow === 'live'
+        ? { value: Titles.MinecraftNintendoSwitch, deviceType: 'Win32' }
+        : undefined;
+
+    // prismarine-auth choisit la bonne stratégie en fonction des options
+    const af = new Authflow('thunder-client', {
+      cacheDirectory: AUTH_DIR,
+      authTitle, // undefined sauf en live
+      // NB: pour forcer SISU, certaines versions utilisent { enableSisu: true }
+      // On laisse en "any" pour éviter les TS breaking changes :
+    } as any);
+
+    // Récupère le token Java + profil
+    const mc = await af.getMinecraftJavaToken({ fetchProfile: true } as any);
+
+    const profile = normalizeProfile(mc?.profile);
+    const payload = { ok: true, profile };
+
+    await fs.writeFile(SESSION_FILE, JSON.stringify(payload, null, 2));
+    return payload; // { ok: true, profile }
+  } catch (e: any) {
+    return { ok: false, error: e?.message || String(e) };
   }
 }
 
+/** Retourne le dernier profil connu (sans réseau) */
+export async function status() {
+  try {
+    await ensureDir();
+    const data = await fs.readFile(SESSION_FILE, 'utf8').catch(() => '');
+    if (!data) return { ok: true, profile: null };
+    const json = JSON.parse(data);
+    return { ok: true, profile: json?.profile ?? null };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || String(e) };
+  }
+}
+
+/** Purge tout le cache d’auth (utile si ça boucle) */
 export async function resetAuth() {
   try {
-    rmSync(AUTH_DIR, { recursive: true, force: true });
-  } catch {}
-  return { ok: true };
-}
-
-export async function status() {
-  const sess = await readJSON<{ id: string; name: string }>(SESSION_FILE);
-  return { ok: true, profile: sess ?? null };
-}
-
-export async function authenticate(opts?: { flow?: Flow }) {
-  const flow: Flow = opts?.flow ?? 'auto';
-
-  ensureDir(AUTH_DIR);
-
-  // IMPORTANT : authTitle requis pour le flow "live" (device code).
-  // On le met tout le temps, ça ne gêne pas les autres flows.
-  const options: any = {
-    flow: flow === 'auto' ? 'live' : flow, // on commence par live; à toi de gérer d’autres fallback côté main si besoin
-    authTitle: 'Thunder Client',          // <- règle l’erreur “Please specify an authTitle …”
-    deviceType: 'Win32',                  // optionnel, mais propre sous Windows
-  };
-
-  try {
-    const auth = new Authflow(undefined, AUTH_DIR, options);
-
-    // Token + profil Minecraft Java
-    const res = await auth.getMinecraftJavaToken(); // { token, entitlements, profile, certificates }
-
-    const profile = res?.profile || {};
-    const normalized = {
-      id: (profile.id || profile.uuid || profile.mcId || '').toString(),
-      name: (profile.name || profile.username || 'Player').toString(),
-    };
-
-    await writeJSON(SESSION_FILE, normalized);
-
-    return {
-      ok: true,
-      profile: normalized,
-    };
+    await fs.rm(AUTH_DIR, { recursive: true, force: true });
+    await ensureDir();
+    return { ok: true };
   } catch (e: any) {
     return { ok: false, error: e?.message || String(e) };
   }
