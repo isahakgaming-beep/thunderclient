@@ -2,6 +2,9 @@
   "name": "nextjs-shadcn",
   "version": "0.1.0",
   "private": true,
+  "description": "Thunder Client — Minecraft launcher (Electron + Next).",
+  "author": "Thunder Team",
+  "license": "MIT",
   "scripts": {
     "dev": "next dev -H 0.0.0.0 --turbopack",
     "build": "next build",
@@ -25,8 +28,6 @@
     "same-runtime": "^0.0.1",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
-    "electron": "^31.3.1",
-    "electron-builder": "^24.13.3",
     "concurrently": "^9.1.0",
     "wait-on": "^8.0.0",
     "minecraft-launcher-core": "^3.18.0",
@@ -42,6 +43,8 @@
     "eslint-config-next": "15.1.7",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3"
   }
 }
