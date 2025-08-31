@@ -1,6 +1,7 @@
 import { app, dialog, shell } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import fetch from 'node-fetch';
 import { Authflow, Titles } from 'prismarine-auth';
 
 export type McSession = {
@@ -9,31 +10,37 @@ export type McSession = {
   profile?: { id: string; name: string };
 };
 
-// On force un dossier stable (même en dev)
+// Dossier stable (dev/prod)
 const baseDir = path.join(app.getPath('appData'), 'Thunder Client');
-export const cacheDir = path.join(baseDir, 'auth-cache');
+const cacheDir = path.join(baseDir, 'auth-cache');
 const profileFile = path.join(baseDir, 'profile.json');
+const debugFile = path.join(baseDir, 'auth-debug.log');
 
-// TEMP : on force l’auth interactive à chaque fois pour débloquer le 403
+// Forcer le login interactif à chaque clic (évite tout cache parasite)
 const ALWAYS_INTERACTIVE = true;
+
+async function log(line: string, obj?: any) {
+  const txt =
+    `[${new Date().toISOString()}] ${line}` +
+    (obj ? ` ${JSON.stringify(obj)}` : '') +
+    '\n';
+  await fs.promises.mkdir(baseDir, { recursive: true }).catch(() => {});
+  await fs.promises.appendFile(debugFile, txt).catch(() => {});
+}
 
 function deviceCodeDialog(code: string, url?: string) {
   if (url) shell.openExternal(url);
-  dialog.showMessageBox({
-    type: 'info',
-    title: 'Connexion Microsoft',
-    message:
-      '1) Une page Microsoft vient de s’ouvrir dans ton navigateur.\n' +
-      `2) Entre ce code : ${code}\n` +
-      '3) Termine la connexion, puis reviens dans Thunder Client.',
-    buttons: ['OK'],
-  }).catch(() => {});
-}
-
-function is403(err: any) {
-  const status = err?.response?.statusCode || err?.statusCode || err?.code;
-  const msg = err?.message || '';
-  return status === 403 || /403/.test(String(status)) || /forbidden/i.test(msg);
+  dialog
+    .showMessageBox({
+      type: 'info',
+      title: 'Connexion Microsoft',
+      message:
+        '1) Une page Microsoft vient de s’ouvrir dans ton navigateur.\n' +
+        `2) Entre ce code : ${code}\n` +
+        '3) Termine la connexion, puis reviens dans Thunder Client.',
+      buttons: ['OK'],
+    })
+    .catch(() => {});
 }
 
 async function purgeAuthCache() {
@@ -41,65 +48,106 @@ async function purgeAuthCache() {
   await fs.promises.mkdir(cacheDir, { recursive: true }).catch(() => {});
 }
 
-async function runFlow(): Promise<McSession> {
-  await fs.promises.mkdir(baseDir, { recursive: true }).catch(() => {});
-  await fs.promises.mkdir(cacheDir, { recursive: true }).catch(() => {});
-
-  const flow = new Authflow(
-    'thunder-user',
-    cacheDir,
-    {
-      flow: 'live',
-      authTitle: Titles.MinecraftJava, // obligatoire avec le flow "live"
-    },
-    (res) => deviceCodeDialog(res.user_code, res.verification_uri)
+function explain403(where: string) {
+  return (
+    `403 Forbidden pendant: ${where}\n\n` +
+    `Causes fréquentes:\n` +
+    `• Pas de gamertag Xbox → https://www.xbox.com/\n` +
+    `• Compte enfant: autorisations multijoueur/cross-network → https://account.xbox.com/Settings\n` +
+    `• Pas de licence Minecraft: Java sur ce compte → https://www.minecraft.net/msaprofile\n\n` +
+    `Consulte aussi le log: ${debugFile}`
   );
-
-  const mc = await flow.getMinecraftJavaToken({
-    fetchEntitlements: true,
-    fetchProfile: true,
-  });
-
-  if (mc.profile) {
-    await fs.promises.writeFile(
-      profileFile,
-      JSON.stringify({ id: mc.profile.id, name: mc.profile.name }, null, 2),
-      'utf8'
-    ).catch(() => {});
-  }
-
-  return {
-    token: mc.token,
-    entitlements: mc.entitlements,
-    profile: mc.profile,
-  };
 }
 
 export async function authenticate(): Promise<McSession> {
+  await log('===== NEW AUTH ATTEMPT =====');
   try {
     if (ALWAYS_INTERACTIVE) {
-      // on purge toujours pour forcer l’ouverture de la page Microsoft
+      await log('Purging auth cache (ALWAYS_INTERACTIVE=true)');
       await purgeAuthCache();
     }
-    return await runFlow();
+
+    const flow = new Authflow(
+      'thunder-user',
+      cacheDir,
+      {
+        flow: 'live',
+        authTitle: Titles.MinecraftJava, // requis avec le flow "live"
+      },
+      (res) => deviceCodeDialog(res.user_code, res.verification_uri)
+    );
+
+    // 1) On récupère d’abord UNIQUEMENT le token Minecraft (sans entitlements/profil)
+    await log('Step A: getMinecraftJavaToken (token only) START');
+    const mcBasic = await flow.getMinecraftJavaToken({
+      fetchEntitlements: false,
+      fetchProfile: false,
+    });
+    await log('Step A: getMinecraftJavaToken OK');
+
+    const bearer = `Bearer ${mcBasic.token}`;
+
+    // 2) Diagnostic Entitlements (licence)
+    await log('Step B: fetch entitlements START');
+    const entRes = await fetch('https://api.minecraftservices.com/entitlements/mcstore', {
+      headers: { Authorization: bearer },
+    });
+    const entTxt = await entRes.text();
+    await log(`Step B: entitlements status=${entRes.status} body=${entTxt.slice(0, 500)}`);
+
+    if (entRes.status === 403) {
+      await dialog.showErrorBox(
+        'Accès refusé (403) – Entitlements',
+        explain403('entitlements (licence)')
+      );
+      throw new Error('403 on entitlements');
+    }
+    if (!entRes.ok) {
+      await dialog.showErrorBox('Erreur entitlements', `status=${entRes.status}\n${entTxt}`);
+      throw new Error(`Entitlements failed: ${entRes.status}`);
+    }
+    const entJson = entTxt ? JSON.parse(entTxt) : undefined;
+
+    // 3) Diagnostic Profile (pseudo/UUID)
+    await log('Step C: fetch profile START');
+    const profRes = await fetch('https://api.minecraftservices.com/minecraft/profile', {
+      headers: { Authorization: bearer },
+    });
+    const profTxt = await profRes.text();
+    await log(`Step C: profile status=${profRes.status} body=${profTxt.slice(0, 500)}`);
+
+    if (profRes.status === 403) {
+      await dialog.showErrorBox(
+        'Accès refusé (403) – Profile',
+        explain403('minecraft/profile (pseudo)')
+      );
+      throw new Error('403 on profile');
+    }
+    if (!profRes.ok) {
+      await dialog.showErrorBox('Erreur profile', `status=${profRes.status}\n${profTxt}`);
+      throw new Error(`Profile failed: ${profRes.status}`);
+    }
+    const profJson = profTxt ? JSON.parse(profTxt) : undefined;
+
+    // 4) Sauvegarde légère du profil pour l’UI
+    if (profJson?.name && profJson?.id) {
+      await fs.promises
+        .writeFile(profileFile, JSON.stringify({ id: profJson.id, name: profJson.name }, null, 2), 'utf8')
+        .catch(() => {});
+    }
+
+    await log('AUTH SUCCESS');
+    return {
+      token: mcBasic.token,
+      entitlements: entJson,
+      profile: profJson,
+    };
   } catch (err: any) {
-    if (is403(err)) {
-      await purgeAuthCache();
-      await dialog.showMessageBox({
-        type: 'info',
-        title: 'Session refusée (403)',
-        message:
-          "Les serveurs Xbox/Minecraft ont refusé l'accès.\n\n" +
-          "Causes courantes :\n" +
-          "• Pas de gamertag Xbox → https://www.xbox.com/\n" +
-          "• Compte enfant : autorisations Xbox (multijoueur/cross-network) → https://account.xbox.com/Settings\n" +
-          "• Pas de licence Minecraft Java sur ce compte → https://www.minecraft.net/msaprofile\n\n" +
-          "On va relancer la connexion…",
-        buttons: ['OK'],
-      }).catch(() => {});
-      return await runFlow();
+    await log('AUTH ERROR', { message: err?.message });
+    // Si erreur générique : on affiche le message brut
+    if (!(err instanceof Error) || !/403/.test(err.message)) {
+      dialog.showErrorBox('Connexion Microsoft', err?.message || String(err));
     }
-    dialog.showErrorBox('Connexion Microsoft', err?.message || String(err));
     throw err;
   }
 }
@@ -116,4 +164,5 @@ export async function getSavedProfile(): Promise<{ id: string; name: string } | 
 export async function logout() {
   await purgeAuthCache();
   await fs.promises.rm(profileFile, { force: true }).catch(() => {});
+  await log('LOGOUT: cache & profile cleared');
 }
