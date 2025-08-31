@@ -17,10 +17,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: 'npm'
+          # pas de cache ici (sinon il faut un lockfile)
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-audit --fund=false
 
       - name: Build renderer
         run: npm run build
