@@ -9,7 +9,13 @@
     "rootDir": "electron",
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": ["node"],
+
+    // >>> IMPORTANT : on force l'émission des .js
+    "noEmit": false,
+    "declaration": false,
+    "emitDeclarationOnly": false,
+    "sourceMap": false
   },
   "include": ["electron/**/*.ts"]
 }
