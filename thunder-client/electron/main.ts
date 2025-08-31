@@ -156,4 +156,31 @@ ipcMain.handle('choose:dir', async () => {
 // Lancement MC
 ipcMain.handle('mc:launch', async (_e, args) => {
   try {
-    const { version, ga
+    const { version, gameDir } = args || {};
+    const javaPath = await ensureJava();
+    const proc = await launchMinecraft({ version, gameDir, javaPath });
+    return { ok: true, pid: (proc as any)?.pid ?? null };
+  } catch (err: any) {
+    dialog.showErrorBox('Launch failed', err?.message || String(err));
+    return { ok: false, error: err?.message || String(err) };
+  }
+});
+
+// Ouvrir un chemin (logs, cache) dans l’explorateur
+ipcMain.handle('logs:open', async (_e, p: string) => {
+  try {
+    await shell.openPath(p);
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || String(e) };
+  }
+});
+
+/* ---------- Gestion erreurs process ---------- */
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
