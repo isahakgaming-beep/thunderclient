@@ -41,8 +41,8 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 
-// Promise avec timeout pour éviter le spinner infini au login
-function withTimeout<T>(p: Promise<T>, ms = 120_000): Promise<T> {
+// Promise avec timeout pour ne jamais spinner à l'infini
+function withTimeout<T>(p: Promise<T>, ms = 180_000): Promise<T> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('LOGIN_TIMEOUT')), ms);
     p.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
@@ -59,13 +59,23 @@ ipcMain.handle('auth:status', async () => {
 
 ipcMain.handle('auth:login', async () => {
   try {
-    // “réveille” le navigateur si besoin ; l’auth réelle est gérée par prismarine-auth
-    shell.openExternal('https://login.live.com/');
-    const session = await withTimeout(authenticate(), 120_000);
+    // Lancement Device Code: on affiche un message avec le code et on ouvre l’URL
+    const session = await withTimeout(
+      authenticate(({ userCode, verificationUri }) => {
+        shell.openExternal(verificationUri || 'https://microsoft.com/devicelogin');
+        dialog.showMessageBox({
+          type: 'info',
+          title: 'Microsoft Sign-in',
+          message: 'Complete sign-in in your browser',
+          detail: `Open ${verificationUri || 'https://microsoft.com/devicelogin'} and enter this code:\n\n${userCode}\n\nAfter validating, return to Thunder Client.`,
+        }).catch(() => {});
+      }),
+      180_000 // 3 minutes
+    );
     return { ok: true, profile: session.profile };
   } catch (err: any) {
     if ((err?.message || String(err)) === 'LOGIN_TIMEOUT') {
-      return { ok: false, error: 'Login timed out. Complete Microsoft sign-in in your browser, then try again.' };
+      return { ok: false, error: 'Login timed out. Try again and enter the code in your browser.' };
     }
     return { ok: false, error: err?.message || String(err) };
   }
