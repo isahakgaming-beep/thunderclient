@@ -30,8 +30,7 @@
     "concurrently": "^9.1.0",
     "wait-on": "^8.0.0",
     "minecraft-launcher-core": "^3.18.0",
-    "prismarine-auth": "^2.5.1",
-    "node-fetch": "^3.3.2"
+    "prismarine-auth": "^2.5.1"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
@@ -43,7 +42,6 @@
     "eslint-config-next": "15.1.7",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5.8.3",
-    "nsis": "^3.0.0"
+    "typescript": "^5.8.3"
   }
 }
