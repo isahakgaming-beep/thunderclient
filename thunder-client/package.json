@@ -1,0 +1,50 @@
+{
+  "name": "nextjs-shadcn",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -H 0.0.0.0 --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "bunx tsc --noEmit && next lint",
+    "format": "bunx biome format --write",
+    "electron:dev": "concurrently \"next dev -H 0.0.0.0 --turbopack\" \"wait-on tcp:3000 && electron .\"",
+    "electron:build": "next build && electron-builder",
+    "postinstall": "electron-builder install-app-deps || true",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "electron:start": "node electron-dist/main.js",
+    "build:win": "npm run build && npm run build:electron && electron-builder --win --x64"
+  },
+  "dependencies": {
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.475.0",
+    "next": "^15.3.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "same-runtime": "^0.0.1",
+    "tailwind-merge": "^3.3.1",
+    "tailwindcss-animate": "^1.0.7",
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3",
+    "electron-is-dev": "^3.2.0",
+    "concurrently": "^9.1.0",
+    "wait-on": "^8.0.0",
+    "minecraft-launcher-core": "^3.18.0",
+    "prismarine-auth": "^2.5.1",
+    "node-fetch": "^3.4.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@eslint/eslintrc": "^3.3.1",
+    "@types/node": "^20.17.50",
+    "@types/react": "^18.3.22",
+    "@types/react-dom": "^18.3.7",
+    "eslint": "^9.27.0",
+    "eslint-config-next": "15.1.7",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.3",
+    "nsis": "^3.0.0"
+  }
+}
