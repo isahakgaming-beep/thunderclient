@@ -2,8 +2,7 @@ name: Build Windows Launcher
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -12,12 +11,13 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 18
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm install
@@ -25,14 +25,14 @@ jobs:
       - name: Build renderer
         run: npm run build
 
-      - name: Build electron
+      - name: Build electron (TS -> JS)
         run: npm run build:electron
 
       - name: Package Windows exe
-        run: npx electron-builder --win --x64
+        run: npx electron-builder --win --x64 --publish=never
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Thunder-Client-Installer
           path: dist/*.exe
