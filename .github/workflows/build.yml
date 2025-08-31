@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # pour créer/mettre à jour les releases
+  contents: write
 
 jobs:
   build:
@@ -28,18 +28,27 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --fund=false
 
-      - name: Build renderer
+      - name: Build renderer (Next)
         run: npm run build
 
       - name: Build electron (TS -> JS)
         run: npm run build:electron
 
+      # ⚠️ Vérification que main.js / preload.js existent bien
+      - name: Check electron build outputs
+        shell: cmd
+        run: |
+          dir
+          echo ---- electron-dist ----
+          if not exist electron-dist\main.js (echo MISSING electron-dist\main.js && exit 1)
+          if not exist electron-dist\preload.js (echo WARNING: preload.js missing)
+          echo OK
+
       - name: Package & Publish (GitHub Releases)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # token automatique de GitHub Actions
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --win --x64 --publish=always
 
-      # optionnel: garder aussi un artifact pour téléchargement direct
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
