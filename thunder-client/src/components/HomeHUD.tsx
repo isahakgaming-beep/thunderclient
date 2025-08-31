@@ -12,6 +12,7 @@ type Stat = { label: string; value: string; Icon: any; hint?: string };
 type SavedProfile = { id: string; name: string } | null;
 
 const LS_KEY_DIR = 'thunder.gameDir';
+const LS_KEY_FLOW = 'thunder.authFlow'; // 'auto' | 'sisu' | 'live'
 
 function StatCard({ label, value, Icon, hint }: Stat) {
   return (
@@ -37,17 +38,17 @@ export default function HomeHUD() {
   const [signing, setSigning] = useState(false);
   const [profile, setProfile] = useState<SavedProfile>(null);
   const [gameDir, setGameDir] = useState<string | null>(null);
+  const [authFlow, setAuthFlow] = useState<'auto' | 'sisu' | 'live'>('auto');
 
+  // Charge préférences (gameDir + flow) au montage
   useEffect(() => {
-    // charge l'état initial
-    const saved = typeof window !== 'undefined' ? localStorage.getItem(LS_KEY_DIR) : null;
-    if (saved) setGameDir(saved);
-    (async () => {
-      try {
-        const res = await api?.invoke?.('auth:status');
-        if (res?.ok) setProfile(res.profile || null);
-      } catch {}
-    })();
+    if (typeof window === 'undefined') return;
+
+    const savedDir = localStorage.getItem(LS_KEY_DIR);
+    if (savedDir) setGameDir(savedDir);
+
+    const savedFlow = localStorage.getItem(LS_KEY_FLOW) as 'auto' | 'sisu' | 'live' | null;
+    if (savedFlow) setAuthFlow(savedFlow);
   }, []);
 
   const stats: Stat[] = [
@@ -59,18 +60,35 @@ export default function HomeHUD() {
     { label: 'Anti-crash', value: 'On', Icon: ShieldCheck, hint: 'Safe' },
   ];
 
+  // Normalise la réponse de l’IPC auth:login (selon que ce soit {uuid,name} ou {profile:{id,name}})
+  function normalizeProfile(res: any): SavedProfile {
+    if (!res) return null;
+    if (res.profile?.id || res.profile?.name) {
+      return { id: res.profile.id || '', name: res.profile.name || '' };
+    }
+    if (res.uuid || res.name) {
+      return { id: res.uuid || '', name: res.name || '' };
+    }
+    return null;
+  }
+
   async function onSignIn() {
     if (!api) return alert('Bridge IPC indisponible.');
     setSigning(true);
     try {
-      const res = await api.invoke('auth:login');
-      if (!res?.ok) return alert(res?.error || 'Login failed');
-      setProfile(res.profile ? { id: res.profile.id, name: res.profile.name } : null);
-      alert(`Signed in as ${res.profile?.name || 'Player'}`);
+      // on passe explicitement le flow, pour tester plus facilement
+      const res = await api.invoke('auth:login', { flow: authFlow });
+      if (!res?.ok) {
+        alert(res?.error || 'Login failed');
+      } else {
+        const p = normalizeProfile(res);
+        setProfile(p);
+        if (p?.name) alert(`Signed in as ${p.name}`);
+      }
     } catch (e: any) {
       alert(e?.message || 'Login failed');
     } finally {
-      setSigning(false);
+      setSigning(false); // <- important : pas de spinner infini
     }
   }
 
@@ -80,7 +98,7 @@ export default function HomeHUD() {
       const dir = await api.invoke('choose:dir');
       if (dir) {
         setGameDir(dir);
-        localStorage.setItem(LS_KEY_DIR, dir);
+        if (typeof window !== 'undefined') localStorage.setItem(LS_KEY_DIR, dir);
       }
     } catch (e: any) {
       alert(e?.message || 'Cannot select folder');
@@ -112,6 +130,12 @@ export default function HomeHUD() {
     }
   }
 
+  // Sauvegarde le flow choisi
+  function onChangeFlow(v: 'auto' | 'sisu' | 'live') {
+    setAuthFlow(v);
+    if (typeof window !== 'undefined') localStorage.setItem(LS_KEY_FLOW, v);
+  }
+
   return (
     <div className="space-y-6">
       {/* HERO */}
@@ -129,7 +153,8 @@ export default function HomeHUD() {
           </CardTitle>
           <p className="text-white/60">Launch Minecraft with enhanced performance and competitive features.</p>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-3">
+
+        <CardContent className="flex flex-wrap gap-3 items-center">
           <Button
             onClick={onLaunch}
             disabled={launching}
@@ -155,6 +180,20 @@ export default function HomeHUD() {
             <Zap className="w-4 h-4" />
             Quick Launch
           </Button>
+
+          {/* Sélecteur simple du flow d'auth pour les tests */}
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-xs text-white/60">Auth flow</span>
+            <select
+              value={authFlow}
+              onChange={(e) => onChangeFlow(e.target.value as 'auto' | 'sisu' | 'live')}
+              className="text-sm bg-black/30 border border-white/10 rounded-md px-2 py-1 outline-none"
+            >
+              <option value="auto">auto</option>
+              <option value="sisu">sisu</option>
+              <option value="live">live</option>
+            </select>
+          </div>
         </CardContent>
 
         {/* chemin affiché si choisi */}
