@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import path from 'path';
 import { authenticate } from './services/auth';
 import { launchMinecraft, ensureJava } from './services/launcher';
@@ -38,17 +38,18 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
-// IPC: Login Microsoft
-ipcMain.handle('auth:login', async () => {
+// --- IPCs ---
+
+ipcMain.handle('auth:login', async (_e, args) => {
+  const flow = args?.flow ?? 'auto'; // 'auto' | 'sisu' | 'live'
   try {
-    const session = await authenticate();
+    const session = await authenticate({ flow });
     return session; // { ok: true/false, ... }
   } catch (err: any) {
     return { ok: false, error: err?.message || String(err) };
   }
 });
 
-// IPC: Lancement Minecraft
 ipcMain.handle('mc:launch', async (_e, args) => {
   try {
     const { version, gameDir } = args || {};
@@ -58,5 +59,15 @@ ipcMain.handle('mc:launch', async (_e, args) => {
   } catch (err: any) {
     dialog.showErrorBox('Launch failed', err?.message || String(err));
     return { ok: false, error: err?.message || String(err) };
+  }
+});
+
+// Optionnel : ouvre le dossier logs/cache pour t’aider à débug
+ipcMain.handle('logs:open', async (_e, p: string) => {
+  try {
+    await shell.openPath(p);
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || String(e) };
   }
 });
