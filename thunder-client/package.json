@@ -1,6 +1,6 @@
 {
   "name": "nextjs-shadcn",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "private": true,
   "description": "Thunder Client — Minecraft launcher (Electron + Next).",
   "author": "Thunder Team",
@@ -13,11 +13,11 @@
     "lint": "bunx tsc --noEmit && next lint",
     "format": "bunx biome format --write",
     "electron:dev": "concurrently \"next dev -H 0.0.0.0 --turbopack\" \"wait-on tcp:3000 && electron .\"",
-    "electron:build": "npm run build && npm run build:electron && electron-builder --publish=never",
+    "electron:build": "npm run build && npm run build:electron && electron-builder",
     "postinstall": "electron-builder install-app-deps || true",
     "build:electron": "tsc -p tsconfig.electron.json",
     "electron:start": "node electron-dist/main.js",
-    "build:win": "npm run build && npm run build:electron && electron-builder --win --x64 --publish=never"
+    "build:win": "npm run build && npm run build:electron && electron-builder --win --x64"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -32,7 +32,8 @@
     "concurrently": "^9.1.0",
     "wait-on": "^8.0.0",
     "minecraft-launcher-core": "^3.18.0",
-    "prismarine-auth": "^2.5.1"
+    "prismarine-auth": "^2.5.1",
+    "electron-updater": "^6.1.8"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
