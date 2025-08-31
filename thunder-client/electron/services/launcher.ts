@@ -1,47 +1,66 @@
-import fs from 'fs';
-import os from 'os';
 import path from 'path';
-import { Client } from 'minecraft-launcher-core';
-import { Authflow } from 'prismarine-auth';
+import { app } from 'electron';
+import { Client, Auth } from 'minecraft-launcher-core';
 import { cacheDir } from './auth';
 
+/**
+ * Chemin Java : version simple. Si tu veux, on pourra ajouter
+ * un téléchargement auto (Temurin) plus tard.
+ */
 export async function ensureJava(): Promise<string> {
-  // Simple pour l’instant : utilise le Java système
+  // On tente "java" depuis le PATH.
+  // (Améliorable : télécharger un JRE dans path.join(cacheDir, 'runtime', 'java'))
   return 'java';
 }
 
-interface LaunchArgs {
-  version: string;
+type LaunchArgs = {
+  version?: string;
   gameDir?: string;
   javaPath?: string;
-}
+  username?: string; // si pas de login, on peut fallback en offline
+};
 
-export async function launchMinecraft({ version, gameDir, javaPath }: LaunchArgs) {
-  const root = gameDir || path.join(os.homedir(), '.thunder', 'minecraft');
-  await fs.promises.mkdir(root, { recursive: true });
-
-  // Utilise les credentials déjà enregistrés (sinon Authflow fera un refresh silencieux)
-  const flow = new Authflow('thunder-client', cacheDir);
-  const { token, profile } = await flow.getMinecraftJavaToken({ fetchProfile: true });
-
-  // Format d'auth compatible minecraft-launcher-core
-  const authorization = {
-    access_token: token,
-    client_token: '',
-    uuid: profile?.id,
-    name: profile?.name,
-    user_properties: {},
-    meta: { type: 'msa', demo: false, xuid: '', clientId: '' }
-  };
-
+/**
+ * Lance Minecraft avec minecraft-launcher-core.
+ * Retourne le process spawné (pour récupérer le pid dans main.ts).
+ */
+export async function launchMinecraft(args: LaunchArgs = {}) {
   const launcher = new Client();
-  const opts: any = {
+
+  const root =
+    args.gameDir ||
+    path.join(app.getPath('appData'), '.minecraft'); // dossier .minecraft par défaut
+
+  const javaPath = args.javaPath || (await ensureJava());
+  const version = args.version || '1.21';
+
+  // Si tu es connecté via Microsoft côté main/auth, tu peux injecter l’auth ici.
+  // En attendant, on met un offline au besoin (à remplacer plus tard par l’auth MS).
+  const authorization = Auth.offline(args.username || 'Player');
+
+  const options: any = {
+    authorization,
     root,
-    javaPath: javaPath || 'java',
-    version: { number: version || '1.21', type: 'release' },
-    memory: { max: '3G', min: '1G' },
-    authorization
+    version: {
+      number: version,
+      type: 'release',
+    },
+    memory: {
+      max: '2G',
+      min: '1G',
+    },
+    javaPath,
   };
 
-  return launcher.launch(opts);
+  return new Promise<any>((resolve, reject) => {
+    launcher.launch(options).catch(reject);
+
+    launcher.on('debug', (m: any) => console.log('[MC DEBUG]', m));
+    launcher.on('data', (m: any) => console.log('[MC]', m));
+    launcher.on('error', (e: any) => reject(e));
+    launcher.on('progress', (_: any) => {});
+
+    // Événement émis quand le process Java est spawné
+    launcher.on('spawn', (proc: any) => resolve(proc));
+  });
 }
