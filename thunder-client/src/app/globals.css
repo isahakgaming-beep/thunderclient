@@ -2,13 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* mode sombre + helpers */
+:root { color-scheme: dark; }
+html, body { height: 100%; }
+
+/* couleurs utilitaires pour le HUD */
 :root {
-  --sidebar: 18 18 22; /* neutral-900-ish */
+  --sidebar: 18 18 22;
   --topbar: 18 18 22;
   --elev: 28 28 34;
 }
 .bg-sidebar\/80 { background-color: rgb(var(--sidebar) / 0.8); }
 .bg-topbar\/80 { background-color: rgb(var(--topbar) / 0.8); }
 .bg-elev\/60   { background-color: rgb(var(--elev) / 0.6); }
-
-body { color-scheme: dark; }
