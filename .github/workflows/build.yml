@@ -9,10 +9,10 @@ jobs:
   build:
     runs-on: windows-latest
 
-    # Tous les "run:" s'exécutent dans le sous-dossier du projet
+    # Toutes les commandes `run:` s'exécutent dans le sous-dossier du projet
     defaults:
       run:
-        working-directory: ./thunder-client   # <-- si ton dossier s'appelle autrement, change ici
+        working-directory: ./thunder-client
 
     steps:
       - name: Checkout repository
@@ -35,9 +35,9 @@ jobs:
       - name: Package Windows exe
         run: npx electron-builder --win --x64 --publish=never
 
-      # Attention: le chemin est relatif à la RACINE du repo, donc on préfixe par le sous-dossier
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Thunder-Client-Installer
-          path: thunder-client/dist/*.exe     # <-- mets le même nom de dossier qu'au-dessus
+          # Chemin depuis la racine du dépôt
+          path: thunder-client/dist/*.exe
