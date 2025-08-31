@@ -6,25 +6,12 @@ import os from 'os';
 export const cacheDir = path.join(os.homedir(), '.thunder', 'auth');
 const profileFile = path.join(cacheDir, 'profile.json');
 
-export type DeviceCodeCb = (info: { userCode: string; verificationUri: string }) => void;
-
-/**
- * Auth Microsoft via "Device Code Flow".
- * - onDeviceCode: callback appelé pour afficher le code à l'utilisateur
- */
-export async function authenticate(onDeviceCode?: DeviceCodeCb) {
+/** Login Microsoft via MSAL (flux supporté par prismarine-auth 2.5.x) */
+export async function authenticate() {
   await fs.promises.mkdir(cacheDir, { recursive: true });
 
-  // NB: "flow" et "deviceCodeCallback" sont passés en 'any' pour éviter
-  // d'être bloqué par les types; prismarine-auth les reconnaît à l'exécution.
-  const flow: any = new (Authflow as any)('thunder-client', cacheDir, {
-    flow: 'device',
-    deviceCodeCallback: (res: any) => {
-      // res.userCode      -> code à entrer
-      // res.verificationUri -> https://microsoft.com/devicelogin
-      onDeviceCode?.({ userCode: res.userCode, verificationUri: res.verificationUri });
-    },
-  });
+  // NB: on force 'msal' (flux supporté). Pas de 'device' ici.
+  const flow: any = new (Authflow as any)('thunder-client', cacheDir, { flow: 'msal' });
 
   const result = await flow.getMinecraftJavaToken({ fetchProfile: true });
 
