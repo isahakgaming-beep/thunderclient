@@ -4,12 +4,11 @@ productName: Thunder Client
 directories:
   output: dist
 
-# ⚠️ On contrôle exactement ce qui est embarqué dans app.asar
+# Inclure TOUT ce qu'il faut dans l'app.asar
 files:
-  - '!**/*'            # on commence par tout exclure
-  - 'electron-dist/**/*'  # on inclut le code Electron compilé (main.js, preload.js…)
-  - 'out/**/*'            # on inclut le site Next exporté
-  - 'package.json'        # et le package.json (qui pointe vers electron-dist/main.js)
+  - out/**             # le site Next exporté (grâce à output:'export')
+  - electron-dist/**   # le code Electron compilé (main.js, preload.js…)
+  - package.json       # doit contenir "main": "electron-dist/main.js"
 
 win:
   target: nsis
