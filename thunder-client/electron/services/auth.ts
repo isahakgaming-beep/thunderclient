@@ -6,12 +6,17 @@ import os from 'os';
 export const cacheDir = path.join(os.homedir(), '.thunder', 'auth');
 const profileFile = path.join(cacheDir, 'profile.json');
 
-/** Login Microsoft via MSAL (flux supporté par prismarine-auth 2.5.x) */
+/**
+ * Connexion Microsoft via le flux "live" (aucune app Azure requise).
+ * Compatible avec prismarine-auth 2.5.x.
+ */
 export async function authenticate() {
   await fs.promises.mkdir(cacheDir, { recursive: true });
 
-  // NB: on force 'msal' (flux supporté). Pas de 'device' ici.
-  const flow: any = new (Authflow as any)('thunder-client', cacheDir, { flow: 'msal' });
+  // 👉 On force le flow "live" (pas "msal" ni "device")
+  const flow: any = new (Authflow as any)('thunder-client', cacheDir, {
+    flow: 'live',
+  });
 
   const result = await flow.getMinecraftJavaToken({ fetchProfile: true });
 
