@@ -6,12 +6,10 @@ files:
   - out/**
   - electron-dist/**
   - package.json
-extraResources:
-  - from: assets/
-    to: assets
-mac:
-  target: dmg
+
 win:
   target: nsis
+mac:
+  target: dmg
 linux:
   target: AppImage
