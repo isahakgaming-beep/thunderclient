@@ -3,9 +3,10 @@ import os from 'os';
 import path from 'path';
 import { Client } from 'minecraft-launcher-core';
 import { Authflow } from 'prismarine-auth';
+import { cacheDir } from './auth';
 
 export async function ensureJava(): Promise<string> {
-  // simplifié : utilise le Java système
+  // Simple pour l’instant : utilise le Java système
   return 'java';
 }
 
@@ -17,39 +18,30 @@ interface LaunchArgs {
 
 export async function launchMinecraft({ version, gameDir, javaPath }: LaunchArgs) {
   const root = gameDir || path.join(os.homedir(), '.thunder', 'minecraft');
-  fs.mkdirSync(root, { recursive: true });
+  await fs.promises.mkdir(root, { recursive: true });
 
-  const cacheDir = path.join(os.homedir(), '.thunder', 'auth');
+  // Utilise les credentials déjà enregistrés (sinon Authflow fera un refresh silencieux)
   const flow = new Authflow('thunder-client', cacheDir);
-
-  // fetchProfile (singulier) et champs conformes
   const { token, profile } = await flow.getMinecraftJavaToken({ fetchProfile: true });
 
-  const launcher = new Client();
+  // Format d'auth compatible minecraft-launcher-core
+  const authorization = {
+    access_token: token,
+    client_token: '',
+    uuid: profile?.id,
+    name: profile?.name,
+    user_properties: {},
+    meta: { type: 'msa', demo: false, xuid: '', clientId: '' }
+  };
 
+  const launcher = new Client();
   const opts: any = {
     root,
     javaPath: javaPath || 'java',
     version: { number: version || '1.21', type: 'release' },
     memory: { max: '3G', min: '1G' },
-
-    // Auth attendu par minecraft-launcher-core
-    authorization: {
-      access_token: token,
-      profiles: [profile],
-      selected_profile: profile
-    }
+    authorization
   };
 
-  // renvoie le process enfant (minecraft)
-  return new Promise((resolve, reject) => {
-    launcher.launch(opts)
-      .then(proc => resolve(proc))
-      .catch(reject);
-
-    launcher.on('debug', (m: any) => console.log('[MC]', m));
-    launcher.on('data',  (m: any) => console.log('[MC]', m));
-    launcher.on('close', () => console.log('[MC] closed'));
-    launcher.on('progress', (p: any) => console.log('[MC progress]', p));
-  });
+  return launcher.launch(opts);
 }
