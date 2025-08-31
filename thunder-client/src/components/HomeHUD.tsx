@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -27,8 +27,28 @@ function StatCard({ label, value, Icon, hint }: Stat) {
   );
 }
 
+type SavedProfile = { id: string; name: string } | null;
+
 export default function HomeHUD() {
   const [launching, setLaunching] = useState(false);
+  const [signing, setSigning] = useState(false);
+  const [profile, setProfile] = useState<SavedProfile>(null);
+
+  // ----- helpers -----
+  const api: any = (typeof window !== 'undefined' && (window as any).api) || null;
+
+  async function refreshAuth() {
+    try {
+      const res = await api?.invoke?.('auth:status');
+      if (res?.ok) setProfile(res.profile || null);
+    } catch {
+      // ignore
+    }
+  }
+
+  useEffect(() => {
+    refreshAuth();
+  }, []);
 
   const stats: Stat[] = [
     { label: 'Online', value: '347', Icon: Activity },
@@ -39,13 +59,41 @@ export default function HomeHUD() {
     { label: 'Anti-crash', value: 'On', Icon: ShieldCheck, hint: 'Safe' },
   ];
 
-  async function onLaunch() {
+  async function onSignIn() {
+    if (!api) return alert('Bridge IPC indisponible.');
+    setSigning(true);
     try {
-      setLaunching(true);
-      const res: any = await (window as any).api?.invoke('mc:launch', { version: '1.21' });
-      if (!res?.ok) throw new Error(res?.error || 'Launch failed');
-    } catch (e) {
-      alert((e as Error).message);
+      const res = await api.invoke('auth:login');
+      if (!res?.ok) {
+        alert(res?.error || 'Login failed');
+        return;
+      }
+      setProfile(res.profile ? { id: res.profile.id, name: res.profile.name } : null);
+      alert(`Signed in as ${res.profile?.name || 'Player'}`);
+    } catch (e: any) {
+      alert(e?.message || 'Login failed');
+    } finally {
+      setSigning(false);
+    }
+  }
+
+  async function onLaunch() {
+    if (!api) return alert('Bridge IPC indisponible.');
+    setLaunching(true);
+    try {
+      const res = await api.invoke('mc:launch', { version: '1.21' });
+      if (!res?.ok) {
+        if (res?.code === 'SIGN_IN_REQUIRED') {
+          alert('Please sign in with your Microsoft account first.');
+        } else {
+          alert(res?.error || 'Launch failed');
+        }
+        return;
+      }
+      // Optionnel: tu peux afficher un toast “Launching (PID: …)”
+      // console.log('Launched with PID', res.pid);
+    } catch (e: any) {
+      alert(e?.message || 'Launch failed');
     } finally {
       setLaunching(false);
     }
@@ -59,6 +107,11 @@ export default function HomeHUD() {
           <div className="flex items-center gap-2">
             <Badge className="bg-emerald-600/20 text-emerald-300 border-emerald-500/30">Optimized</Badge>
             <span className="text-sm text-white/60">Performance</span>
+            {profile ? (
+              <Badge className="ml-2 bg-white/10 text-white/80 border-white/20">
+                Signed in: {profile.name}
+              </Badge>
+            ) : null}
           </div>
           <CardTitle className="text-2xl md:text-3xl font-bold">
             Ready to <span className="text-violet-300">Thunder</span>?
@@ -78,7 +131,7 @@ export default function HomeHUD() {
             <Settings2 className="w-4 h-4" />
             Quick Settings
           </Button>
-          <Button variant="outline" className="gap-2 border-white/20">
+          <Button variant="outline" className="gap-2 border-white/20" onClick={onLaunch}>
             <Zap className="w-4 h-4" />
             Quick Launch
           </Button>
@@ -99,10 +152,11 @@ export default function HomeHUD() {
         </CardHeader>
         <CardContent className="flex items-center gap-3">
           <Button
-            onClick={() => (window as any).api?.invoke('auth:login')}
+            onClick={onSignIn}
+            disabled={signing}
             className="bg-white/10 hover:bg-white/15"
           >
-            Sign in
+            {signing ? 'Signing in…' : profile ? `Signed in: ${profile.name}` : 'Sign in'}
           </Button>
           <span className="text-sm text-white/60">Required for Minecraft Java.</span>
         </CardContent>
