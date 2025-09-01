@@ -1,56 +1,53 @@
-name: Build Windows Launcher
+name: Build Windows (Next + Electron)
 
 on:
+  workflow_dispatch: {}        # déclenchement manuel depuis l’onglet Actions
   push:
-    branches: [ main ]
-  workflow_dispatch:
-
-permissions:
-  contents: write
+    branches: [ main ]         # (optionnel) build auto à chaque push sur main
 
 jobs:
-  build:
+  build-win:
     runs-on: windows-latest
 
-    defaults:
-      run:
-        working-directory: ./thunder-client
-
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
+          cache: npm
 
-      - name: Install dependencies
+      - name: Install deps
         run: npm install --no-audit --fund=false
 
+      # 1) Build Next -> produit le dossier "out/"
       - name: Build renderer (Next)
         run: npm run build
 
+      # 2) Build Electron (TS -> JS dans electron-dist/)
       - name: Build electron (TS -> JS)
         run: npm run build:electron
 
-      # ⚠️ Vérification que main.js / preload.js existent bien
+      # (optionnel) Afficher ce qui a été produit, utile en cas d'erreur
       - name: Check electron build outputs
-        shell: cmd
         run: |
-          dir
-          echo ---- electron-dist ----
-          if not exist electron-dist\main.js (echo MISSING electron-dist\main.js && exit 1)
-          if not exist electron-dist\preload.js (echo WARNING: preload.js missing)
-          echo OK
+          echo "== electron-dist =="
+          dir electron-dist
+          echo "== out =="
+          dir out
 
-      - name: Package & Publish (GitHub Releases)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --win --x64 --publish=always
+      # 3) Fabriquer l'installeur Windows avec electron-builder
+      #    -c.publish=never -> n'essaie PAS de publier sur GitHub Releases
+      - name: Package (electron-builder)
+        run: npx electron-builder --win --x64 -c.publish=never
 
+      # 4) Uploader l'installeur en artifact téléchargeable
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Thunder-Client-Installer
-          path: thunder-client/dist/*.exe
+          name: thunder-client-windows
+          path: |
+            dist/*.exe
+            dist/*.msi
