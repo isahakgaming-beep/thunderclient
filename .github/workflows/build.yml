@@ -1,43 +1,40 @@
 name: Build Windows (Next + Electron)
 
 on:
-  workflow_dispatch: {}        # Lancement manuel depuis Actions
+  workflow_dispatch: {}
   push:
-    branches: [ main ]         # (optionnel) build auto à chaque push sur main
+    branches: [ main ]
 
 jobs:
   build-win:
     runs-on: windows-latest
 
-    # Toutes les commandes "run:" se feront dans le dossier thunder-client/
-    defaults:
-      run:
-        working-directory: thunder-client
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Pas de cache npm (pas de package-lock.json pour l'instant)
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
-          # cache: npm  # <-- volontairement désactivé
+          node-version: 20
+          cache: npm
 
       - name: Install deps
         run: npm install --no-audit --fund=false
 
-      # 1) Build Next -> produit le dossier "out/"
+      # 1) Build + Export (crée le dossier "out/")
       - name: Build renderer (Next)
-        run: npm run build
+        run: |
+          npm run build
+          npm run export
 
       # 2) Build Electron (TS -> JS dans electron-dist/)
       - name: Build electron (TS -> JS)
         run: npm run build:electron
 
-      # (optionnel) Afficher ce qui a été produit, utile en cas d'erreur
+      # (optionnel) Lister ce qui a été produit
       - name: Check electron build outputs
+        shell: pwsh
         run: |
           echo "== electron-dist =="
           dir electron-dist
@@ -45,15 +42,15 @@ jobs:
           dir out
 
       # 3) Fabriquer l'installeur Windows avec electron-builder
+      #    -c.publish=never -> ne publie pas sur GitHub Releases
       - name: Package (electron-builder)
         run: npx electron-builder --win --x64 -c.publish=never
 
       # 4) Uploader l'installeur en artifact téléchargeable
-      # (chemins relatifs à la racine du repo -> on cible thunder-client/dist)
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: thunder-client-windows
           path: |
-            thunder-client/dist/*.exe
-            thunder-client/dist/*.msi
+            dist/*.exe
+            dist/*.msi
