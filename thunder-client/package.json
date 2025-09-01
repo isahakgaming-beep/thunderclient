@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "next dev -H 0.0.0.0 --turbopack",
     "build": "next build",
+    "export": "next export -o out",
     "start": "next start",
     "lint": "bunx tsc --noEmit && next lint",
     "format": "bunx biome format --write",
@@ -27,7 +28,6 @@
     "electron-updater": "^6.1.8",
     "lucide-react": "^0.475.0",
     "minecraft-launcher-core": "^3.18.0",
-    "msmc": "^5.0.5",
     "next": "^15.3.2",
     "node-fetch": "^3.3.2",
     "prismarine-auth": "^2.5.1",
