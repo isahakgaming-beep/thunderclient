@@ -1,23 +1,49 @@
 appId: com.thunder.client
 productName: Thunder Client
 
+# nom des fichiers générés
+artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+
 directories:
   output: dist
 
-# Inclure TOUT ce qu'il faut dans l'app.asar
+# IMPORTANT : on inclut le site Next exporté, le code Electron compilé,
+# package.json ET les deps de prod (node_modules).
 files:
-  - out/**             # le site Next exporté (grâce à output:'export')
-  - electron-dist/**   # le code Electron compilé (main.js, preload.js…)
-  - package.json       # doit contenir "main": "electron-dist/main.js"
+  - out/**                 # Next (output: 'export') => dossier 'out'
+  - electron-dist/**       # main.js / preload.js compilés
+  - package.json
+  - node_modules/**        # dépendances runtime (prismarine-auth, etc.)
 
+# empaqueter dans app.asar (par défaut true)
+asar: true
+# au cas où un module natif *.node serait utilisé un jour
+asarUnpack:
+  - "**/*.node"
+
+# ----- Windows -----
 win:
   target: nsis
-mac:
-  target: dmg
-linux:
-  target: AppImage
+  icon: build/icon.ico
+nsis:
+  oneClick: true
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
 
+# ----- (facultatif) mac / linux -----
+# mac:
+#   target: dmg
+#   icon: build/icon.icns
+# linux:
+#   target: AppImage
+#   icon: build/icons
+
+# ----- Publication GitHub pour l'auto-update (electron-updater) -----
 publish:
   provider: github
-  owner: isahakgaming-beep
-  repo: thunderclient
+  owner: isahakgaming-beep     # <-- ton user GitHub
+  repo: thunderclient          # <-- ton repo
+  releaseType: draft           # crée une release brouillon (pratique pour tester)
