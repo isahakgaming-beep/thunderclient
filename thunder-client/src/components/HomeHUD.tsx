@@ -5,14 +5,15 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
-  Rocket, Settings2, Zap, Gauge, Activity, Clock, MemoryStick, Wifi, ShieldCheck, FolderOpen, X,
+  Rocket, Settings2, Zap, Gauge, Activity, Clock, MemoryStick, Wifi, ShieldCheck,
+  FolderOpen, X,
 } from 'lucide-react';
 
 type Stat = { label: string; value: string; Icon: any; hint?: string };
 type SavedProfile = { id: string; name: string } | null;
 
 const LS_KEY_DIR = 'thunder.gameDir';
-const LS_KEY_FLOW = 'thunder.authFlow'; // 'auto' | 'sisu' | 'live'
+const LS_KEY_FLOW = 'thunder.authFlow';
 
 function StatCard({ label, value, Icon, hint }: Stat) {
   return (
@@ -38,18 +39,30 @@ export default function HomeHUD() {
   const [signing, setSigning] = useState(false);
   const [profile, setProfile] = useState<SavedProfile>(null);
   const [gameDir, setGameDir] = useState<string | null>(null);
-  const [authFlow, setAuthFlow] = useState<'auto' | 'sisu' | 'live'>('auto');
 
-  // Charge préférences (gameDir + flow) au montage
+  // ← NEW: flow
+  const [flow, setFlow] = useState<'auto' | 'live' | 'sisu'>('auto');
+
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const savedDir = localStorage.getItem(LS_KEY_DIR);
+    const savedDir = typeof window !== 'undefined' ? localStorage.getItem(LS_KEY_DIR) : null;
     if (savedDir) setGameDir(savedDir);
 
-    const savedFlow = localStorage.getItem(LS_KEY_FLOW) as 'auto' | 'sisu' | 'live' | null;
-    if (savedFlow) setAuthFlow(savedFlow);
+    const savedFlow = typeof window !== 'undefined' ? (localStorage.getItem(LS_KEY_FLOW) as any) : null;
+    if (savedFlow === 'live' || savedFlow === 'sisu' || savedFlow === 'auto') {
+      setFlow(savedFlow);
+    }
+
+    (async () => {
+      try {
+        const res = await api?.invoke?.('auth:status');
+        if (res?.ok) setProfile(res.profile || null);
+      } catch {}
+    })();
   }, []);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') localStorage.setItem(LS_KEY_FLOW, flow);
+  }, [flow]);
 
   const stats: Stat[] = [
     { label: 'Online', value: '347', Icon: Activity },
@@ -60,35 +73,18 @@ export default function HomeHUD() {
     { label: 'Anti-crash', value: 'On', Icon: ShieldCheck, hint: 'Safe' },
   ];
 
-  // Normalise la réponse de l’IPC auth:login (selon que ce soit {uuid,name} ou {profile:{id,name}})
-  function normalizeProfile(res: any): SavedProfile {
-    if (!res) return null;
-    if (res.profile?.id || res.profile?.name) {
-      return { id: res.profile.id || '', name: res.profile.name || '' };
-    }
-    if (res.uuid || res.name) {
-      return { id: res.uuid || '', name: res.name || '' };
-    }
-    return null;
-  }
-
   async function onSignIn() {
     if (!api) return alert('Bridge IPC indisponible.');
     setSigning(true);
     try {
-      // on passe explicitement le flow, pour tester plus facilement
-      const res = await api.invoke('auth:login', { flow: authFlow });
-      if (!res?.ok) {
-        alert(res?.error || 'Login failed');
-      } else {
-        const p = normalizeProfile(res);
-        setProfile(p);
-        if (p?.name) alert(`Signed in as ${p.name}`);
-      }
+      // >>>>>>>>>> IMPORTANT: on envoie le flow choisi au main
+      const res = await api.invoke('auth:login', { flow });
+      if (!res?.ok) return alert(res?.error || 'Login failed');
+      setProfile(res.profile ? { id: res.profile.id, name: res.profile.name } : null);
     } catch (e: any) {
       alert(e?.message || 'Login failed');
     } finally {
-      setSigning(false); // <- important : pas de spinner infini
+      setSigning(false);
     }
   }
 
@@ -98,7 +94,7 @@ export default function HomeHUD() {
       const dir = await api.invoke('choose:dir');
       if (dir) {
         setGameDir(dir);
-        if (typeof window !== 'undefined') localStorage.setItem(LS_KEY_DIR, dir);
+        localStorage.setItem(LS_KEY_DIR, dir);
       }
     } catch (e: any) {
       alert(e?.message || 'Cannot select folder');
@@ -130,12 +126,6 @@ export default function HomeHUD() {
     }
   }
 
-  // Sauvegarde le flow choisi
-  function onChangeFlow(v: 'auto' | 'sisu' | 'live') {
-    setAuthFlow(v);
-    if (typeof window !== 'undefined') localStorage.setItem(LS_KEY_FLOW, v);
-  }
-
   return (
     <div className="space-y-6">
       {/* HERO */}
@@ -147,14 +137,29 @@ export default function HomeHUD() {
             {profile ? (
               <Badge className="ml-2 bg-white/10 text-white/80 border-white/20">Signed in: {profile.name}</Badge>
             ) : null}
+
+            {/* >>> Select du flow */}
+            <div className="ml-auto flex items-center gap-2 text-sm text-white/70">
+              <span className="opacity-70">Auth flow</span>
+              <select
+                value={flow}
+                onChange={(e) => setFlow(e.target.value as any)}
+                className="bg-white/10 border border-white/10 rounded-md px-2 py-1 outline-none"
+              >
+                <option value="auto">auto</option>
+                <option value="live">live</option>
+                <option value="sisu">sisu</option>
+              </select>
+            </div>
           </div>
+
           <CardTitle className="text-2xl md:text-3xl font-bold">
             Ready to <span className="text-violet-300">Thunder</span>?
           </CardTitle>
           <p className="text-white/60">Launch Minecraft with enhanced performance and competitive features.</p>
         </CardHeader>
 
-        <CardContent className="flex flex-wrap gap-3 items-center">
+        <CardContent className="flex flex-wrap gap-3">
           <Button
             onClick={onLaunch}
             disabled={launching}
@@ -180,27 +185,11 @@ export default function HomeHUD() {
             <Zap className="w-4 h-4" />
             Quick Launch
           </Button>
-
-          {/* Sélecteur simple du flow d'auth pour les tests */}
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-xs text-white/60">Auth flow</span>
-            <select
-              value={authFlow}
-              onChange={(e) => onChangeFlow(e.target.value as 'auto' | 'sisu' | 'live')}
-              className="text-sm bg-black/30 border border-white/10 rounded-md px-2 py-1 outline-none"
-            >
-              <option value="auto">auto</option>
-              <option value="sisu">sisu</option>
-              <option value="live">live</option>
-            </select>
-          </div>
         </CardContent>
 
-        {/* chemin affiché si choisi */}
         {gameDir && (
           <div className="px-6 pb-4 text-xs text-white/60">
-            Using game folder:&nbsp;
-            <span className="text-white/80">{gameDir}</span>
+            Using game folder:&nbsp;<span className="text-white/80">{gameDir}</span>
           </div>
         )}
       </Card>
